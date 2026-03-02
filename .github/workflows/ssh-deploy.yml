@@ -1,0 +1,100 @@
+name: SSH Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Which action to run remotely
+        required: true
+        type: choice
+        options:
+          - deploy
+          - ps
+          - logs
+      service:
+        description: Service name (required only for logs)
+        required: false
+        type: string
+
+jobs:
+  run-ssh-command:
+    runs-on: ubuntu-latest
+
+    env:
+      DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '2222' }}
+      DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER || 'deploy' }}
+      DEPLOY_HOSTNAME_CHECK: ${{ vars.DEPLOY_HOSTNAME_CHECK || 'true' }}
+      DEPLOY_SSH_KNOWN_HOSTS_LINE: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS_LINE }}
+
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+
+          case "${{ github.event.inputs.action }}" in
+            deploy|ps)
+              if [ -n "${{ github.event.inputs.service }}" ]; then
+                echo "service input is only valid with action=logs" >&2
+                exit 1
+              fi
+              ;;
+            logs)
+              if [ -z "${{ github.event.inputs.service }}" ]; then
+                echo "service is required when action=logs" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "unsupported action" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Configure SSH key and known_hosts
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          if [ "$DEPLOY_HOSTNAME_CHECK" = "true" ]; then
+            if [ -z "${DEPLOY_SSH_KNOWN_HOSTS_LINE}" ]; then
+              echo "DEPLOY_SSH_KNOWN_HOSTS_LINE is required when DEPLOY_HOSTNAME_CHECK=true" >&2
+              exit 1
+            fi
+
+            printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS_LINE" > "$HOME/.ssh/known_hosts"
+            chmod 600 "$HOME/.ssh/known_hosts"
+            echo "SSH_STRICT_OPTS=-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" >> "$GITHUB_ENV"
+          else
+            echo "SSH_STRICT_OPTS=-o StrictHostKeyChecking=accept-new" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build remote command
+        run: |
+          set -euo pipefail
+
+          action="${{ github.event.inputs.action }}"
+          if [ "$action" = "logs" ]; then
+            remote_cmd="logs ${{ github.event.inputs.service }}"
+          else
+            remote_cmd="$action"
+          fi
+
+          echo "REMOTE_CMD=$remote_cmd" >> "$GITHUB_ENV"
+
+      - name: Run SSH action
+        run: |
+          set -euo pipefail
+
+          ssh $SSH_STRICT_OPTS \
+            -i "$HOME/.ssh/deploy_key" \
+            -p "$DEPLOY_SSH_PORT" \
+            "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            "$REMOTE_CMD"
