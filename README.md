@@ -44,6 +44,35 @@ Anything else is rejected.
 
 Avoid setting generic `COMPOSE_FILE` / `COMPOSE_PROJECT_DIR` in `.env` for this stack; those names are reserved by Docker Compose and can cause command resolution issues.
 
+## Komodo backend (optional)
+
+By default, `ssh-deploy` uses Docker Compose to manage stacks. To use the **Komodo API** backend instead:
+
+1. **Set all four of these environment variables** (if any are missing, Compose backend is used):
+	- `KOMODO_ADDRESS`: Full URL to Komodo API (e.g., `http://komodo.internal:5000`)
+	- `KOMODO_API_KEY`: API key for authentication
+	- `KOMODO_API_SECRET`: API secret for authentication
+	- `KOMODO_STACK`: Stack name/ID to manage (must match your Komodo configuration)
+
+2. **Optional polling configuration**:
+	- `KOMODO_POLL_TIMEOUT`: Max time to wait for async operations (default `5m`)
+	- `KOMODO_POLL_INTERVAL`: Time between status checks (default `5s`)
+
+### Komodo architecture
+
+When enabled, `ssh-deploy` uses Komodo API for:
+
+- **`deploy`**: Calls `PullStack` then `DeployStack`, polling until both complete.
+- **`destroy`**: Calls `DestroyStack`, polling until complete.
+- **`ps`**: Calls `ListStackServices`, returns JSON output.
+- **`logs <service>`**: Calls `GetStackLog` with service filter.
+
+Response format is Komodo-native JSON (not docker-compose text). SSH command syntax remains unchanged. This backend is useful for audit trails, centralized orchestration, and multi-site deployment management.
+
+### Rollback to Compose
+
+If Komodo is unavailable or you need to revert, simply clear the `KOMODO_*` env vars and restart the service.
+
 ## Run in Docker
 
 1. Create `data/authorized_keys` and add deploy keys.

@@ -21,6 +21,14 @@ type Config struct {
 	CommandTimeout     time.Duration
 	IdleTimeout        time.Duration
 	MaxTimeout         time.Duration
+	// Komodo backend configuration
+	KomodoEnabled      bool
+	KomodoAddress      string
+	KomodoAPIKey       string
+	KomodoAPISecret    string
+	KomodoStack        string
+	KomodoPollTimeout  time.Duration
+	KomodoPollInterval time.Duration
 }
 
 func (cfg Config) Address() string {
@@ -50,6 +58,27 @@ func LoadFromEnv() (Config, error) {
 
 	allowedServices := parseCSVSet(getEnv("ALLOWED_LOG_SERVICES", ""))
 
+	// Komodo configuration (optional)
+	komodoAddr := strings.TrimSpace(os.Getenv("KOMODO_ADDRESS"))
+	komodoKey := strings.TrimSpace(os.Getenv("KOMODO_API_KEY"))
+	komodoSecret := strings.TrimSpace(os.Getenv("KOMODO_API_SECRET"))
+	komodoStack := strings.TrimSpace(os.Getenv("KOMODO_STACK"))
+	komodoEnabled := komodoAddr != "" && komodoKey != "" && komodoSecret != "" && komodoStack != ""
+
+	komodoPolltimeout := 5 * time.Minute // default
+	if pollStr := getEnv("KOMODO_POLL_TIMEOUT", ""); pollStr != "" {
+		if pt, err := parseDuration(pollStr, "KOMODO_POLL_TIMEOUT"); err == nil {
+			komodoPolltimeout = pt
+		}
+	}
+
+	komodoPollInterval := 5 * time.Second // default
+	if pollStr := getEnv("KOMODO_POLL_INTERVAL", ""); pollStr != "" {
+		if pi, err := parseDuration(pollStr, "KOMODO_POLL_INTERVAL"); err == nil {
+			komodoPollInterval = pi
+		}
+	}
+
 	cfg := Config{
 		ListenHost:         getEnv("SSH_LISTEN_HOST", "0.0.0.0"),
 		ListenPort:         getEnv("SSH_LISTEN_PORT", "2222"),
@@ -62,6 +91,13 @@ func LoadFromEnv() (Config, error) {
 		CommandTimeout:     commandTimeout,
 		IdleTimeout:        idleTimeout,
 		MaxTimeout:         maxTimeout,
+		KomodoEnabled:      komodoEnabled,
+		KomodoAddress:      komodoAddr,
+		KomodoAPIKey:       komodoKey,
+		KomodoAPISecret:    komodoSecret,
+		KomodoStack:        komodoStack,
+		KomodoPollTimeout:  komodoPolltimeout,
+		KomodoPollInterval: komodoPollInterval,
 	}
 
 	if cfg.ListenPort == "" {

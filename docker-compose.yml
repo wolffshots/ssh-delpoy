@@ -19,6 +19,13 @@ services:
       COMMAND_TIMEOUT: "${COMMAND_TIMEOUT:-10m}"
       SSH_IDLE_TIMEOUT: "${SSH_IDLE_TIMEOUT:-2m}"
       SSH_MAX_TIMEOUT: "${SSH_MAX_TIMEOUT:-15m}"
+        # Komodo API configuration (optional; if all set, overrides Compose backend)
+        KOMODO_ADDRESS: "${KOMODO_ADDRESS:-}"
+        KOMODO_API_KEY: "${KOMODO_API_KEY:-}"
+        KOMODO_API_SECRET: "${KOMODO_API_SECRET:-}"
+        KOMODO_STACK: "${KOMODO_STACK:-}"
+        KOMODO_POLL_TIMEOUT: "${KOMODO_POLL_TIMEOUT:-5m}"
+        KOMODO_POLL_INTERVAL: "${KOMODO_POLL_INTERVAL:-5s}"
     env_file:
       - .env
     volumes:
