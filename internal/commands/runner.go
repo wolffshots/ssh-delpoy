@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	"ssh-deploy/internal/config"
 )
@@ -26,6 +28,11 @@ func (runner Runner) Execute(ctx context.Context, request Request, stdout io.Wri
 		}
 		if err := runner.runCompose(ctx, stdout, stderr, "up", "-d"); err != nil {
 			return fmt.Errorf("docker compose up failed: %w", err)
+		}
+		return nil
+	case ActionDestroy:
+		if err := runner.runCompose(ctx, stdout, stderr, "down"); err != nil {
+			return fmt.Errorf("docker compose down failed: %w", err)
 		}
 		return nil
 	case ActionPS:
@@ -52,8 +59,20 @@ func (runner Runner) runCompose(ctx context.Context, stdout io.Writer, stderr io
 
 	command := exec.CommandContext(ctx, "docker", args...)
 	command.Dir = runner.config.ComposeProjectDir
+	command.Env = sanitizeComposeEnv(os.Environ())
 	command.Stdout = stdout
 	command.Stderr = stderr
 
 	return command.Run()
+}
+
+func sanitizeComposeEnv(current []string) []string {
+	filtered := make([]string, 0, len(current))
+	for _, entry := range current {
+		if strings.HasPrefix(entry, "COMPOSE_FILE=") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }

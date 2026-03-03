@@ -32,13 +32,17 @@ Anything else is rejected.
 | `SSH_LISTEN_PORT` | `2222` | SSH port |
 | `SSH_AUTHORIZED_KEYS_PATH` | `/app/data/authorized_keys` | Authorized keys file |
 | `SSH_HOST_KEY_PATH` | `/app/data/ssh_host_ed25519` | SSH host key path (auto-generated if absent) |
-| `COMPOSE_PROJECT_DIR` | `/srv/target` | Directory where `docker compose` runs |
-| `COMPOSE_FILE` | *(empty)* | Optional compose file path |
+| `DEPLOY_COMPOSE_PROJECT_DIR` | `/srv/target` | Directory where `docker compose` runs |
+| `DEPLOY_COMPOSE_FILE` | `docker-compose.yml` | Compose file used inside `DEPLOY_COMPOSE_PROJECT_DIR` |
+| `TARGET_COMPOSE_PROJECT_DIR` | `.` | Host path mounted at `/srv/target` in container |
+| `TARGET_COMPOSE_FILE` | `docker-compose.yml` | Injected into `DEPLOY_COMPOSE_FILE` in `docker-compose.yml` |
 | `ALLOWED_LOG_SERVICES` | *(empty)* | Comma-separated allowlist for `logs` |
 | `LOGS_TAIL` | `300` | Tail line count for `logs` |
 | `COMMAND_TIMEOUT` | `10m` | Max time per remote action |
 | `SSH_IDLE_TIMEOUT` | `2m` | SSH idle timeout |
 | `SSH_MAX_TIMEOUT` | `15m` | Max SSH connection duration |
+
+Avoid setting generic `COMPOSE_FILE` / `COMPOSE_PROJECT_DIR` in `.env` for this stack; those names are reserved by Docker Compose and can cause command resolution issues.
 
 ## Run in Docker
 

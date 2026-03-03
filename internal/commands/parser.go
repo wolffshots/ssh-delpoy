@@ -9,9 +9,10 @@ import (
 type Action string
 
 const (
-	ActionDeploy Action = "deploy"
-	ActionPS     Action = "ps"
-	ActionLogs   Action = "logs"
+	ActionDeploy  Action = "deploy"
+	ActionDestroy Action = "destroy"
+	ActionPS      Action = "ps"
+	ActionLogs    Action = "logs"
 )
 
 var serviceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
@@ -57,6 +58,11 @@ func (p Parser) Parse(args []string) (Request, error) {
 			return Request{}, fmt.Errorf("deploy does not accept arguments")
 		}
 		return Request{Action: ActionDeploy}, nil
+	case string(ActionDestroy):
+		if len(args) != 1 {
+			return Request{}, fmt.Errorf("destroy does not accept arguments")
+		}
+		return Request{Action: ActionDestroy}, nil
 	case string(ActionPS):
 		if len(args) != 1 {
 			return Request{}, fmt.Errorf("ps does not accept arguments")
@@ -68,7 +74,7 @@ func (p Parser) Parse(args []string) (Request, error) {
 		}
 		return p.buildLogsRequest(args[1])
 	default:
-		return Request{}, fmt.Errorf("command is not allowed; allowed: deploy | ps | logs <service>")
+		return Request{}, fmt.Errorf("command is not allowed; allowed: deploy | destroy | ps | logs <service>")
 	}
 }
 

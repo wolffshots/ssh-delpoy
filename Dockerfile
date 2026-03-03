@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates docker-cli
+RUN apk add --no-cache ca-certificates docker-cli docker-cli-compose
 
 WORKDIR /app
 COPY --from=build /out/ssh-deploy /usr/local/bin/ssh-deploy

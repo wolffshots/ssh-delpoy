@@ -55,8 +55,8 @@ func LoadFromEnv() (Config, error) {
 		ListenPort:         getEnv("SSH_LISTEN_PORT", "2222"),
 		AuthorizedKeysPath: getEnv("SSH_AUTHORIZED_KEYS_PATH", "/app/data/authorized_keys"),
 		HostKeyPath:        getEnv("SSH_HOST_KEY_PATH", "/app/data/ssh_host_ed25519"),
-		ComposeProjectDir:  getEnv("COMPOSE_PROJECT_DIR", "/srv/target"),
-		ComposeFile:        strings.TrimSpace(os.Getenv("COMPOSE_FILE")),
+		ComposeProjectDir:  getEnv("DEPLOY_COMPOSE_PROJECT_DIR", getEnv("COMPOSE_PROJECT_DIR", "/srv/target")),
+		ComposeFile:        firstNonEmpty(strings.TrimSpace(os.Getenv("DEPLOY_COMPOSE_FILE")), strings.TrimSpace(os.Getenv("COMPOSE_FILE"))),
 		AllowedLogServices: allowedServices,
 		LogsTail:           logsTail,
 		CommandTimeout:     commandTimeout,
@@ -114,4 +114,13 @@ func parseCSVSet(raw string) map[string]struct{} {
 		result[entry] = struct{}{}
 	}
 	return result
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

@@ -12,14 +12,16 @@ services:
       SSH_LISTEN_PORT: "${SSH_LISTEN_PORT:-2222}"
       SSH_AUTHORIZED_KEYS_PATH: "/app/data/authorized_keys"
       SSH_HOST_KEY_PATH: "/app/data/ssh_host_ed25519"
-      COMPOSE_PROJECT_DIR: "${TARGET_COMPOSE_PROJECT_DIR:-/srv/target}"
-      COMPOSE_FILE: "${TARGET_COMPOSE_FILE:-}"
+      DEPLOY_COMPOSE_PROJECT_DIR: "/srv/target"
+      DEPLOY_COMPOSE_FILE: "${TARGET_COMPOSE_FILE:-docker-compose.yml}"
       ALLOWED_LOG_SERVICES: "${ALLOWED_LOG_SERVICES:-web,api}"
       LOGS_TAIL: "${LOGS_TAIL:-300}"
       COMMAND_TIMEOUT: "${COMMAND_TIMEOUT:-10m}"
       SSH_IDLE_TIMEOUT: "${SSH_IDLE_TIMEOUT:-2m}"
       SSH_MAX_TIMEOUT: "${SSH_MAX_TIMEOUT:-15m}"
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${TARGET_COMPOSE_PROJECT_DIR:-/srv/target}:${TARGET_COMPOSE_PROJECT_DIR:-/srv/target}
+      - ${TARGET_COMPOSE_PROJECT_DIR:-.}:/srv/target
