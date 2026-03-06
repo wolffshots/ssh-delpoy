@@ -32,3 +32,27 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
       - ${TARGET_COMPOSE_PROJECT_DIR:-.}:/srv/target
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    container_name: tailscale-ssh-deploy
+    restart: unless-stopped
+    depends_on:
+      - ssh-deploy
+    environment:
+      TS_CLIENT_ID: "${TS_OAUTH_CLIENT_ID:-}"
+      TS_CLIENT_SECRET: "${TS_OAUTH_CLIENT_SECRET:-}"
+      TS_HOSTNAME: "${TS_HOSTNAME:-ssh-deploy}"
+      TS_STATE_DIR: "/var/lib/tailscale"
+      TS_USERSPACE: "false"
+      TS_EXTRA_ARGS: "${TS_EXTRA_ARGS:---accept-dns=false}"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    network_mode: "service:ssh-deploy"
+
+volumes:
+  tailscale-state:

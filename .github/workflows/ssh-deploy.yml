@@ -19,8 +19,12 @@ on:
 jobs:
   run-ssh-command:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
 
     env:
+      DEPLOY_USE_TAILSCALE: ${{ vars.DEPLOY_USE_TAILSCALE || 'false' }}
+      DEPLOY_TAILSCALE_HOST: ${{ vars.DEPLOY_TAILSCALE_HOST }}
       DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
       DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT || '2222' }}
       DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER || 'deploy' }}
@@ -89,6 +93,33 @@ jobs:
 
           echo "REMOTE_CMD=$remote_cmd" >> "$GITHUB_ENV"
 
+      - name: Connect to Tailscale
+        if: env.DEPLOY_USE_TAILSCALE == 'true'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_OAUTH_AUDIENCE }}
+          hostname: gha-ssh-deploy-${{ github.run_id }}
+          tags: tag:ci
+
+      - name: Select SSH target
+        run: |
+          set -euo pipefail
+
+          if [ "$DEPLOY_USE_TAILSCALE" = "true" ]; then
+            if [ -z "$DEPLOY_TAILSCALE_HOST" ]; then
+              echo "DEPLOY_TAILSCALE_HOST is required when DEPLOY_USE_TAILSCALE=true" >&2
+              exit 1
+            fi
+            echo "TARGET_SSH_HOST=$DEPLOY_TAILSCALE_HOST" >> "$GITHUB_ENV"
+          else
+            if [ -z "$DEPLOY_SSH_HOST" ]; then
+              echo "DEPLOY_SSH_HOST is required when DEPLOY_USE_TAILSCALE=false" >&2
+              exit 1
+            fi
+            echo "TARGET_SSH_HOST=$DEPLOY_SSH_HOST" >> "$GITHUB_ENV"
+          fi
+
       - name: Run SSH action
         run: |
           set -euo pipefail
@@ -96,5 +127,5 @@ jobs:
           ssh $SSH_STRICT_OPTS \
             -i "$HOME/.ssh/deploy_key" \
             -p "$DEPLOY_SSH_PORT" \
-            "$DEPLOY_SSH_USER@$DEPLOY_SSH_HOST" \
+            "$DEPLOY_SSH_USER@$TARGET_SSH_HOST" \
             "$REMOTE_CMD"
