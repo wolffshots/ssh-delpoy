@@ -88,11 +88,20 @@ type Update struct {
 	// Additional fields may be present in response
 }
 
+type StackContainer struct {
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Status string `json:"status"`
+}
+
 // StackService represents a service in a stack.
 type StackService struct {
-	Name  string `json:"name"`
-	State string `json:"state"`
-	// Additional fields may be present
+	Service         string          `json:"service"`
+	Image           string          `json:"image"`
+	Container       *StackContainer `json:"container"`
+	UpdateAvailable bool            `json:"update_available"`
+	Name            string          `json:"name,omitempty"`
+	State           string          `json:"state,omitempty"`
 }
 
 // StackActionState represents action state for a stack.
@@ -104,8 +113,12 @@ type StackActionState struct {
 
 // Log represents stack logs.
 type Log struct {
-	Output string `json:"output"`
-	// Additional fields may be present
+	Stage   string `json:"stage"`
+	Command string `json:"command"`
+	Stdout  string `json:"stdout"`
+	Stderr  string `json:"stderr"`
+	Success bool   `json:"success"`
+	Output  string `json:"output,omitempty"`
 }
 
 // --------------- HTTP HELPERS ---------------

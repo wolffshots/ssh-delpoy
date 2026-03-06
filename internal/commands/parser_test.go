@@ -20,6 +20,11 @@ func TestParserParse(t *testing.T) {
 			want:  Request{Action: ActionDeploy},
 		},
 		{
+			name:  "destroy verb",
+			input: []string{"destroy"},
+			want:  Request{Action: ActionDestroy},
+		},
+		{
 			name:  "deploy raw docker compose",
 			input: []string{"docker", "compose", "pull", "&&", "docker", "compose", "up"},
 			want:  Request{Action: ActionDeploy},
@@ -62,6 +67,16 @@ func TestParserParse(t *testing.T) {
 		{
 			name:    "reject extra args",
 			input:   []string{"ps", "--all"},
+			wantErr: true,
+		},
+		{
+			name:    "reject destroy extra args",
+			input:   []string{"destroy", "now"},
+			wantErr: true,
+		},
+		{
+			name:    "reject empty command",
+			input:   []string{},
 			wantErr: true,
 		},
 	}

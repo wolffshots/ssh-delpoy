@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -175,12 +174,24 @@ func (kb *KomodoBackend) PS(ctx context.Context, stdout io.Writer, stderr io.Wri
 		return fmt.Errorf("list services failed: %w", err)
 	}
 
-	// Output as JSON for now (Komodo-native format)
-	data, err := json.MarshalIndent(services, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal services: %w", err)
+	fmt.Fprintln(stdout, "SERVICE\tSTATE\tSTATUS")
+	for _, svc := range services {
+		serviceName := strings.TrimSpace(svc.Service)
+		if serviceName == "" {
+			serviceName = strings.TrimSpace(svc.Name)
+		}
+
+		state := strings.TrimSpace(svc.State)
+		status := ""
+		if svc.Container != nil {
+			if state == "" {
+				state = strings.TrimSpace(svc.Container.State)
+			}
+			status = strings.TrimSpace(svc.Container.Status)
+		}
+
+		fmt.Fprintf(stdout, "%s\t%s\t%s\n", serviceName, state, status)
 	}
-	fmt.Fprint(stdout, string(data))
 	return nil
 }
 
@@ -190,7 +201,18 @@ func (kb *KomodoBackend) Logs(ctx context.Context, service string, stdout io.Wri
 		return fmt.Errorf("get logs failed: %w", err)
 	}
 
-	fmt.Fprintln(stdout, log.Output)
+	if strings.TrimSpace(log.Stdout) != "" {
+		fmt.Fprint(stdout, log.Stdout)
+	}
+	if strings.TrimSpace(log.Stderr) != "" {
+		fmt.Fprint(stderr, log.Stderr)
+	}
+	if strings.TrimSpace(log.Stdout) == "" && strings.TrimSpace(log.Stderr) == "" && strings.TrimSpace(log.Output) != "" {
+		fmt.Fprint(stdout, log.Output)
+	}
+	if !log.Success {
+		return fmt.Errorf("komodo log request failed at stage %q", log.Stage)
+	}
 	return nil
 }
 

@@ -62,8 +62,8 @@ func TestReadListStackServices(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]StackService{
-			{Name: "web", State: "running"},
-			{Name: "db", State: "running"},
+			{Service: "web", Container: &StackContainer{State: "running", Status: "Up 2m"}},
+			{Service: "db", Container: &StackContainer{State: "running", Status: "Up 2m"}},
 		})
 	}))
 	defer server.Close()
@@ -76,8 +76,11 @@ func TestReadListStackServices(t *testing.T) {
 	if len(services) != 2 {
 		t.Fatalf("expected 2 services, got %d", len(services))
 	}
-	if services[0].Name != "web" {
-		t.Fatalf("expected first service=web, got %s", services[0].Name)
+	if services[0].Service != "web" {
+		t.Fatalf("expected first service=web, got %s", services[0].Service)
+	}
+	if services[0].Container == nil || services[0].Container.State != "running" {
+		t.Fatalf("expected first container state=running")
 	}
 }
 
@@ -104,7 +107,8 @@ func TestGetStackLog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(Log{
-			Output: "line1\nline2\nline3",
+			Stdout:  "line1\nline2\nline3",
+			Success: true,
 		})
 	}))
 	defer server.Close()
@@ -114,7 +118,7 @@ func TestGetStackLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadGetStackLog: %v", err)
 	}
-	if log.Output != "line1\nline2\nline3" {
-		t.Fatalf("expected output, got %s", log.Output)
+	if log.Stdout != "line1\nline2\nline3" {
+		t.Fatalf("expected stdout, got %s", log.Stdout)
 	}
 }

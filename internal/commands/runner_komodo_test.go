@@ -4,173 +4,208 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"ssh-deploy/internal/config"
-	"ssh-deploy/internal/komodo"
 )
 
-// MockKomodoClient implements komodo.Client operations for testing.
-type MockKomodoClient struct {
-	pullCalled    bool
-	deployCalled  bool
-	destroyCalled bool
-	pullErr       error
-	deployErr     error
-	destroyErr    error
-}
+func TestNewRunnerSelectsBackend(t *testing.T) {
+	t.Parallel()
 
-// Helper function to create a test KomodoBackend using a mock.
-func createTestKomodoBackend() *KomodoBackend {
-	cfg := config.Config{
-		KomodoStack:        "test-stack",
-		LogsTail:           100,
-		KomodoPollTimeout:  5 * time.Second,
-		KomodoPollInterval: 100 * time.Millisecond,
+	composeRunner := NewRunner(config.Config{KomodoEnabled: false})
+	if _, ok := composeRunner.backend.(*ComposeBackend); !ok {
+		t.Fatalf("expected ComposeBackend, got %T", composeRunner.backend)
 	}
-	kb := &KomodoBackend{
-		config: cfg,
-		client: komodo.NewClient("http://localhost:8080", "key", "secret"),
-	}
-	return kb
-}
 
-func TestComposeBackendDeploy(t *testing.T) {
-	cfg := config.Config{
-		ComposeProjectDir: "/tmp",
-		ComposeFile:       "docker-compose.yml",
-	}
-	backend := NewComposeBackend(cfg)
-
-	// This will fail because docker isn't available in test env,
-	// but we're testing the method signature and backend dispatch.
-	var stdout, stderr bytes.Buffer
-	err := backend.Deploy(context.Background(), &stdout, &stderr)
-	if err == nil {
-		t.Fatalf("expected error (docker not available), got nil")
+	komodoRunner := NewRunner(config.Config{
+		KomodoEnabled:   true,
+		KomodoAddress:   "http://example.test",
+		KomodoAPIKey:    "key",
+		KomodoAPISecret: "secret",
+		KomodoStack:     "stack",
+	})
+	if _, ok := komodoRunner.backend.(*KomodoBackend); !ok {
+		t.Fatalf("expected KomodoBackend, got %T", komodoRunner.backend)
 	}
 }
 
-func TestKomodoBackendCreation(t *testing.T) {
+func TestSanitizeComposeEnv(t *testing.T) {
+	t.Parallel()
+
+	in := []string{"A=1", "COMPOSE_FILE=/tmp/compose.yml", "B=2"}
+	out := sanitizeComposeEnv(in)
+
+	if len(out) != 2 {
+		t.Fatalf("expected 2 env entries, got %d", len(out))
+	}
+	if strings.Join(out, ",") != "A=1,B=2" {
+		t.Fatalf("unexpected sanitized env: %v", out)
+	}
+}
+
+func TestKomodoBackendDeployCallsPullAndDeploy(t *testing.T) {
+	t.Parallel()
+
+	called := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Helper()
+		if r.URL.Path != "/execute" {
+			t.Fatalf("expected /execute, got %s", r.URL.Path)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+
+		typ, _ := payload["type"].(string)
+		called = append(called, typ)
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": typ + "-id", "status": "created"})
+	}))
+	defer server.Close()
+
 	cfg := config.Config{
-		KomodoAddress:      "http://localhost:8080",
+		KomodoEnabled:      true,
+		KomodoAddress:      server.URL,
 		KomodoAPIKey:       "key",
 		KomodoAPISecret:    "secret",
-		KomodoStack:        "my-stack",
-		LogsTail:           100,
-		KomodoPollTimeout:  5 * time.Second,
-		KomodoPollInterval: 100 * time.Millisecond,
+		KomodoStack:        "polyphony",
+		KomodoPollTimeout:  100 * time.Millisecond,
+		KomodoPollInterval: 1 * time.Millisecond,
 	}
 	backend := NewKomodoBackend(cfg)
-	if backend == nil {
-		t.Fatalf("expected KomodoBackend, got nil")
+
+	var stdout, stderr bytes.Buffer
+	if err := backend.Deploy(context.Background(), &stdout, &stderr); err != nil {
+		t.Fatalf("deploy failed: %v", err)
 	}
-	if backend.config.KomodoStack != "my-stack" {
-		t.Fatalf("expected stack=my-stack, got %s", backend.config.KomodoStack)
+
+	if len(called) != 2 || called[0] != "PullStack" || called[1] != "DeployStack" {
+		t.Fatalf("unexpected execute sequence: %v", called)
+	}
+	if !strings.Contains(stdout.String(), "Deployed polyphony") {
+		t.Fatalf("unexpected deploy output: %q", stdout.String())
 	}
 }
 
-func TestBackendSelection(t *testing.T) {
-	tests := []struct {
-		name         string
-		cfg          config.Config
-		expectedType string
-	}{
-		{
-			name: "Compose backend when Komodo disabled",
-			cfg: config.Config{
-				KomodoEnabled: false,
-			},
-			expectedType: "*commands.ComposeBackend",
-		},
-		{
-			name: "Komodo backend when Komodo enabled",
-			cfg: config.Config{
-				KomodoEnabled:   true,
-				KomodoAddress:   "http://localhost:8080",
-				KomodoAPIKey:    "key",
-				KomodoAPISecret: "secret",
-				KomodoStack:     "my-stack",
-			},
-			expectedType: "*commands.KomodoBackend",
-		},
-	}
+func TestKomodoBackendPSFormatsServiceState(t *testing.T) {
+	t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := NewRunner(tt.cfg)
-			// Type check by calling a method that only works on one type
-			// This is a simple validation that the right backend was selected
-			if runner.backend == nil {
-				t.Fatalf("backend not initialized")
-			}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Helper()
+		if r.URL.Path != "/read" {
+			t.Fatalf("expected /read, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{
+				"service": "alpine",
+				"container": map[string]any{
+					"state":  "running",
+					"status": "Up 3 minutes",
+				},
+			},
 		})
-	}
-}
+	}))
+	defer server.Close()
 
-func TestKomodoBackendPSOutput(t *testing.T) {
-	kb := createTestKomodoBackend()
-
-	// We're testing that PS returns JSON-formatted output
-	// The actual Komodo API call would fail without a real server,
-	// but we can check the method signature works.
-	var stdout bytes.Buffer
-	// This will fail due to connection error, which is expected
-	err := kb.PS(context.Background(), &stdout, &bytes.Buffer{})
-	if err == nil {
-		t.Fatalf("expected error (no mock server), got nil")
-	}
-}
-
-func TestServicesSerialization(t *testing.T) {
-	services := []komodo.StackService{
-		{Name: "web", State: "running"},
-		{Name: "db", State: "running"},
-	}
-
-	data, err := json.MarshalIndent(services, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal services: %v", err)
-	}
-
-	var unmarshaled []komodo.StackService
-	if err := json.Unmarshal(data, &unmarshaled); err != nil {
-		t.Fatalf("unmarshal services: %v", err)
-	}
-
-	if len(unmarshaled) != 2 {
-		t.Fatalf("expected 2 services, got %d", len(unmarshaled))
-	}
-	if unmarshaled[0].Name != "web" {
-		t.Fatalf("expected first service=web, got %s", unmarshaled[0].Name)
-	}
-}
-
-func TestNewRunnerDispatch(t *testing.T) {
-	// Test with Compose backend (default when no Komodo env)
 	cfg := config.Config{
-		ComposeProjectDir: "/tmp",
-		KomodoEnabled:     false,
+		KomodoEnabled:   true,
+		KomodoAddress:   server.URL,
+		KomodoAPIKey:    "key",
+		KomodoAPISecret: "secret",
+		KomodoStack:     "polyphony",
 	}
-	runner := NewRunner(cfg)
-	_, isCompose := runner.backend.(*ComposeBackend)
-	if !isCompose {
-		t.Fatalf("expected ComposeBackend, got %T", runner.backend)
+	backend := NewKomodoBackend(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := backend.PS(context.Background(), &stdout, &stderr); err != nil {
+		t.Fatalf("ps failed: %v", err)
 	}
 
-	// Test with Komodo backend
-	komodoCfg := config.Config{
-		KomodoEnabled:     true,
-		KomodoAddress:     "http://localhost:8080",
-		KomodoAPIKey:      "key",
-		KomodoAPISecret:   "secret",
-		KomodoStack:       "my-stack",
-		KomodoPollTimeout: 5 * time.Second,
+	out := stdout.String()
+	if !strings.Contains(out, "SERVICE\tSTATE\tSTATUS") {
+		t.Fatalf("missing table header, got: %q", out)
 	}
-	komodoRunner := NewRunner(komodoCfg)
-	_, isKomodo := komodoRunner.backend.(*KomodoBackend)
-	if !isKomodo {
-		t.Fatalf("expected KomodoBackend, got %T", komodoRunner.backend)
+	if !strings.Contains(out, "alpine\trunning\tUp 3 minutes") {
+		t.Fatalf("missing service row, got: %q", out)
+	}
+}
+
+func TestKomodoBackendLogsWritesStdoutAndStderr(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Helper()
+		if r.URL.Path != "/read" {
+			t.Fatalf("expected /read, got %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"stdout":  "out-line\n",
+			"stderr":  "err-line\n",
+			"success": true,
+		})
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		KomodoEnabled:   true,
+		KomodoAddress:   server.URL,
+		KomodoAPIKey:    "key",
+		KomodoAPISecret: "secret",
+		KomodoStack:     "polyphony",
+		LogsTail:        50,
+	}
+	backend := NewKomodoBackend(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := backend.Logs(context.Background(), "alpine", &stdout, &stderr); err != nil {
+		t.Fatalf("logs failed: %v", err)
+	}
+
+	if stdout.String() != "out-line\n" {
+		t.Fatalf("unexpected stdout: %q", stdout.String())
+	}
+	if stderr.String() != "err-line\n" {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+}
+
+func TestKomodoBackendLogsReturnsErrorWhenUnsuccessful(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"stage":   "get stack log",
+			"success": false,
+		})
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		KomodoEnabled:   true,
+		KomodoAddress:   server.URL,
+		KomodoAPIKey:    "key",
+		KomodoAPISecret: "secret",
+		KomodoStack:     "polyphony",
+		LogsTail:        50,
+	}
+	backend := NewKomodoBackend(cfg)
+
+	err := backend.Logs(context.Background(), "alpine", &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "komodo log request failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

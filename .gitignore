@@ -6,3 +6,4 @@ data/ssh_host_ed25519.pub
 *.out
 *.env
 ssh-deploy
+coverage.out

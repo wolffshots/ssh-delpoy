@@ -20,7 +20,37 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run unit tests with coverage
+        run: |
+          set -euo pipefail
+          go test ./... -coverprofile=coverage.out -covermode=atomic
+          go tool cover -func=coverage.out
+
+      - name: Enforce minimum coverage
+        env:
+          MIN_COVERAGE: "40"
+        run: |
+          set -euo pipefail
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%","",$3); print $3}')
+          echo "Total coverage: ${total}%"
+          awk -v total="$total" -v min="$MIN_COVERAGE" 'BEGIN { if ((total + 0) < (min + 0)) { exit 1 } }'
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
